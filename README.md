@@ -1,3 +1,28 @@
+# FTP绿色版服务端（Windows GUI）
+
+这是基于 [fclairamb/ftpserver](https://github.com/fclairamb/ftpserver) 开发的 Windows x64 绿色图形界面版本。
+
+- 单窗口中文界面，解压即用
+- 默认监听主网卡 IPv4，FTP 端口 12121
+- 本地目录、多账户、只读权限和最大连接数
+- 被动端口、FTP/FTPS、日志和文件 HASH 设置
+- 随机密码、显示/复制密码、系统托盘和开机启动
+- `localfs` 精简构建，不包含云存储和第三方认证后端
+
+最新 Windows 安装包请在本仓库的 Releases 页面下载。详细使用方法见安装包内的 `使用说明.txt`。
+
+构建：
+
+```bash
+scripts/build-windows-gui.sh 0.7.1
+```
+
+该脚本需要 Go 工具链，生成的文件位于 `dist/`。GUI 版权信息：`Make by 倚栏听雨`。
+
+下面保留原项目说明。
+
+---
+
 # Golang FTP Server
 
 ![Build](https://github.com/fclairamb/ftpserver/workflows/Build/badge.svg)

@@ -1,3 +1,5 @@
+//go:build !localfs
+
 // Package fs provides all the core features related to file-system access
 package fs
 

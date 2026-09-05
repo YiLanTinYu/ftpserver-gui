@@ -1,3 +1,5 @@
+//go:build !localfs
+
 // Package config provides all the config management
 package config
 

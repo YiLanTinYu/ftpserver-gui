@@ -2,15 +2,10 @@
 package server
 
 import (
-	"bytes"
-	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -31,6 +26,7 @@ type Server struct { // nolint: maligned
 	logger          *slog.Logger
 	nbClients       uint32
 	nbClientsSync   sync.Mutex
+	acceptedClients map[uint32]struct{}
 	zeroClientEvent chan error
 	tlsOnce         sync.Once
 	tlsConfig       *tls.Config
@@ -61,9 +57,10 @@ var ErrNotEnabled = errors.New("not enabled")
 // NewServer creates a server instance
 func NewServer(config *config.Config, logger *slog.Logger) (*Server, error) {
 	return &Server{
-		config:   config,
-		logger:   logger,
-		accesses: newFsCache(),
+		config:          config,
+		logger:          logger,
+		accesses:        newFsCache(),
+		acceptedClients: make(map[uint32]struct{}),
 	}, nil
 }
 
@@ -111,7 +108,18 @@ func (s *Server) ReloadConfig() error {
 func (s *Server) ClientConnected(cc serverlib.ClientContext) (string, error) {
 	s.nbClientsSync.Lock()
 	defer s.nbClientsSync.Unlock()
+	if maxClients := s.config.Content.MaxClients; maxClients > 0 && s.nbClients >= uint32(maxClients) {
+		s.logger.Warn(
+			"Client rejected: maximum connections reached",
+			"clientId", cc.ID(),
+			"remoteAddr", cc.RemoteAddr(),
+			"maxClients", maxClients,
+		)
+
+		return "", fmt.Errorf("maximum number of clients reached: %d", maxClients)
+	}
 	s.nbClients++
+	s.acceptedClients[cc.ID()] = struct{}{}
 	s.logger.Info(
 		"Client connected",
 		"clientId", cc.ID(),
@@ -131,6 +139,10 @@ func (s *Server) ClientDisconnected(cc serverlib.ClientContext) {
 	s.nbClientsSync.Lock()
 	defer s.nbClientsSync.Unlock()
 
+	if _, accepted := s.acceptedClients[cc.ID()]; !accepted {
+		return
+	}
+	delete(s.acceptedClients, cc.ID())
 	s.nbClients--
 
 	s.logger.Info(
@@ -192,59 +204,6 @@ func (s *Server) loadFs(access *confpar.Access) (afero.Fs, error) {
 	}
 
 	return newFs, err
-}
-
-func (s *Server) getAccessFromWebhook(user, pass string) (*confpar.Access, error) {
-	// Convert payload to JSON
-	jsonData, err := json.Marshal(map[string]string{
-		"user": user,
-		"pass": pass,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Timeout is implemented with context termination
-	ctx, cancel := context.WithTimeout(context.Background(), s.config.Content.AccessesWebhook.Timeout.Duration)
-	defer cancel()
-
-	// Create a new HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", s.config.Content.AccessesWebhook.URL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	for key, value := range s.config.Content.AccessesWebhook.Headers {
-		req.Header.Set(key, value)
-	}
-
-	// Execute the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Check the response status
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Return the response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	access := new(confpar.Access)
-	err = json.Unmarshal(body, &access)
-	if err != nil {
-		return nil, err
-	}
-
-	return access, nil
 }
 
 // AuthUser authenticates the user and selects an handling driver

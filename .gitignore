@@ -1,4 +1,6 @@
 .DS_Store
+dist/
+upstream-release/
 ftpserver
 ftpserver.json
 ftpserver.log
